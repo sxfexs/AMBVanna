@@ -1,0 +1,476 @@
+"""
+INSTRUCCIONS PER GENERAR CÒDIGO DE MAPA AMB STREAMLIT I FOLIUM
+
+Ets un expert en visualització de dades geoespacials. La teva tasca és generar codi Python que visualitzi el contingut del DataFrame `df` com a mapa interactiu utilitzant Streamlit i Folium.
+
+REGLA PRINCIPAL:
+
+La geometria del mapa dependrà del tipus de geometria present al DataFrame `df`:
+
+- Si la columna `geom` conté punts (`Point`), genera un mapa amb punts (CircleMarker).
+- Si la columna `geom` conté polígons o multipolígons (`Polygon` o `MultiPolygon`), genera un mapa amb capes GeoJson.
+
+Utilitza els següents imports recomanats per generar el codi (no cal repetir-los si ja existeixen):
+            ```python
+            import streamlit as st
+            import geopandas as gpd
+            import folium
+            from streamlit_folium import st_folium
+            import matplotlib.cm as cm
+            import matplotlib.colors as colors
+            from shapely import wkb
+            import shapely.wkb
+            from folium.plugins import HeatMap
+            import numpy as np
+            from folium import LayerControl
+            import branca.colormap as bcm
+
+            ```
+            ❗ No facis `from shapely.wkb import loads`. Utilitza sempre `shapely.wkb.loads(...)`.
+            ❗ No generis DataFrames simulats. Assumeix que `df` ja està carregat amb dades reals.
+            
+El tipus de geometria es dedueix de les dades de `df`. No facis supòsits.
+
+REGLA PER COLORMAPS:
+
+- Si la visualització representa una variable numèrica, aplica un colormap proporcional.
+- Si es tracta d'una escala amb valors molt dispersos, utilitza escales logarítmiques amb `np.log1p()`.
+- Si el mapa representa agrupacions per categoria (per exemple: per perfil d'usuari o àmbit), genera una capa per grup amb colors diferents.
+
+TRACTAMENT DE LA GEOMETRIA:
+
+Abans de qualsevol visualització:
+
+from shapely import wkb
+df['geometry'] = df['geom'].apply(lambda x: wkb.loads(bytes.fromhex(x)) if isinstance(x, str) else None)
+df = df[df['geometry'].notnull()].copy()
+
+Després converteix a GeoDataFrame:
+
+import geopandas as gpd
+gdf = gpd.GeoDataFrame(df, geometry='geometry', crs='EPSG:4326')
+
+ESTRUCTURA DEL MAPA:
+
+- Centra el mapa a l'Àrea Metropolitana de Barcelona (lat: 41.3874, lon: 2.1686).
+- Configura el zoom_start segons l'àmbit:
+  - Zoom 11
+
+ === EXEMPLES ENTRENATS ===
+            A continuació es mostren preguntes  i el codi Python que hauria de generar-se per visualitzar-les correctament.
+            === Exemple 1 ===
+            **Pregunta**: Fes un mapa coroplètic amb les descàrregues del producte Lidar 2012-2013 per municipi, agrupades segons el perfil d’usuari, durant l’any 2021
+
+            **Codi complet esperat**:
+
+            # Convertir WKB a geometria shapely
+            df['geometry'] = df['geom'].apply(
+                lambda x: wkb.loads(bytes.fromhex(x)) if isinstance(x, str) else None
+            )
+            df = df[df['geometry'].notnull()].copy()
+
+            # Crear GeoDataFrame
+            gdf = gpd.GeoDataFrame(df, geometry='geometry', crs='EPSG:4326')
+
+            # Aplicar escala logarítmica
+            gdf['log_descargas'] = gdf['total_descargas'].apply(lambda x: np.log1p(x))  # log(1 + x)
+            vmin = gdf['log_descargas'].min()
+            vmax = gdf['log_descargas'].max()
+            colormap = cm.get_cmap("YlOrRd")
+            norm = colors.Normalize(vmin=vmin, vmax=vmax)
+
+            def get_color(value):
+                rgba = colormap(norm(np.log1p(value)))
+                return colors.to_hex(rgba)
+
+            # Crear mapa base amb atribució i escala gràfica
+            m = folium.Map(
+                location=[41.3874, 2.1686],
+                zoom_start=9,
+                tiles="OpenStreetMap",
+                attr='CartoAMB | © OpenStreetMap contributors',
+                control_scale=True  # ✅ Escala gràfica activada
+            )
+
+            # Afegir pantalla completa
+            Fullscreen().add_to(m)
+
+            # Una capa per cada perfil d’usuari
+            for perfil, group in gdf.groupby("nomperfil"):
+                gj = folium.GeoJson(
+                    data=group.__geo_interface__,
+                    name=f"Perfil: {perfil}",
+                    style_function=lambda feature: {
+                        "fillColor": get_color(feature["properties"]["total_descargas"]),
+                        "color": "black",
+                        "weight": 0.7,
+                        "fillOpacity": 0.7
+                    },
+                    tooltip=folium.GeoJsonTooltip(
+                        fields=["nommuni", "total_descargas"],
+                        aliases=["Municipi", "Descàrregues Lidar 2022 (2023)"]
+                    )
+                )
+                gj.add_to(m)
+
+            # Control de capes
+            LayerControl(collapsed=False).add_to(m)
+
+            # Crear barra de color logarítmica
+            color_scale = bcm.LinearColormap(
+                colors=[colors.to_hex(colormap(norm(v))) for v in np.linspace(vmin, vmax, 256)],
+                vmin=np.expm1(vmin),  # revertimos log per mostrar valors reals
+                vmax=np.expm1(vmax),
+                caption='Total descàrregues (escala logarítmica)'
+            )
+            color_scale.add_to(m)
+
+            # Mostrar el mapa a Streamlit
+            st_folium(m, width=800, height=600)
+
+
+
+            === Exemple 2===
+            **Pregunta**: fes un mapa Quants clics ha rebut l’orto platja 2023 per part d’usuaris acadèmics?
+
+            **Codi complet esperat**:
+
+            # Convertir geometries WKB a shapely
+            df['geometry'] = df['geom'].apply(lambda x: wkb.loads(bytes.fromhex(x)) if isinstance(x, str) else None)
+            df = df[df['geometry'].notnull()].copy()
+
+            # Crear GeoDataFrame
+            gdf = gpd.GeoDataFrame(df, geometry='geometry', crs='EPSG:4326')
+
+            # Colormap automàtic
+            min_val = df["total_descargas"].min()
+            max_val = df["total_descargas"].max()
+
+            colormap = cm.get_cmap("YlOrRd")
+            norm = colors.Normalize(vmin=min_val, vmax=max_val)
+
+            def get_color(value):
+                rgba = colormap(norm(value))
+                return colors.to_hex(rgba)
+
+            # Crear mapa base centrat a l’AMB
+            m = folium.Map(
+            location=[41.3874, 2.1686],
+            zoom_start=11,
+            tiles="OpenStreetMap",
+            attr='CartoAMB | © OpenStreetMap contributors',
+            control_scale=True  # ✅ Escala gràfica de distància
+            )
+
+            # Capa única amb tots els municipis
+            geojson = folium.GeoJson(
+                data=gdf.__geo_interface__,
+                style_function=lambda feature: {
+                    "fillColor": get_color(feature["properties"]["total_descargas"]),
+                    "color": "black",
+                    "weight": 0.7,
+                    "fillOpacity": 0.75
+                },
+                tooltip=folium.GeoJsonTooltip(fields=["idfull", "total_descargas"], aliases=["ID Full", "Descàrregues"])
+            )
+            geojson.add_to(m)
+
+            # Mostrar el mapa a Streamlit
+            st_folium(m, width=800, height=600)
+
+
+         === Exemple 3===
+        **Pregunta**: fes un mapa de calor amb els idfulls de MTM 1000 on descarreguen més els usuaris amb perfil acadèmic?
+
+            # Convertir geometries WKB a shapely
+            df['geometry'] = df['geom'].apply(lambda x: wkb.loads(bytes.fromhex(x)) if isinstance(x, str) else None)
+            df = df[df['geometry'].notnull()].copy()
+
+            # Crear GeoDataFrame
+            gdf = gpd.GeoDataFrame(df, geometry='geometry', crs='EPSG:4326')
+
+            # Colormap automàtic
+            min_val = df["total_descargas"].min()
+            max_val = df["total_descargas"].max()
+
+            colormap = cm.get_cmap("YlOrRd")
+            norm = colors.Normalize(vmin=min_val, vmax=max_val)
+
+            def get_color(value):
+                rgba = colormap(norm(value))
+                return colors.to_hex(rgba)
+
+            # Crear mapa base centrat a l’AMB
+            m = folium.Map(
+            location=[41.3874, 2.1686],
+            zoom_start=11,
+            tiles="OpenStreetMap",
+            attr='CartoAMB | © OpenStreetMap contributors',
+            control_scale=True  # ✅ Escala gràfica de distància
+            )
+
+            # Capa única amb tots els municipis
+            geojson = folium.GeoJson(
+                data=gdf.__geo_interface__,
+                style_function=lambda feature: {
+                    "fillColor": get_color(feature["properties"]["total_descargas"]),
+                    "color": "black",
+                    "weight": 0.7,
+                    "fillOpacity": 0.75
+                },
+                tooltip=folium.GeoJsonTooltip(fields=["idfull", "total_descargas"], aliases=["ID Full", "Descàrregues"])
+            )
+            geojson.add_to(m)
+
+            # Mostrar el mapa a Streamlit
+
+            === Exemple 4===
+            **Pregunta**: has un mapa coroplètic de clics per municipis
+
+            # Convertir geometries WKB a shapely
+            df["geometry"] = df["geom"].apply(
+                lambda x: wkb.loads(bytes.fromhex(x), hex=True) if isinstance(x, str) else None
+            )
+            df = df[df["geometry"].notnull()].copy()
+
+            # Crear GeoDataFrame
+            gdf = gpd.GeoDataFrame(df, geometry="geometry", crs="EPSG:4326")
+
+            # Escala logarítmica
+            gdf["log_clicks"] = gdf["total_clicks"].apply(lambda x: np.log1p(x))  # log(1 + x)
+            vmin = gdf["log_clicks"].min()
+            vmax = gdf["log_clicks"].max()
+
+            colormap = cm.get_cmap("OrRd")  # Puedes cambiar a "YlOrRd", etc.
+            norm = colors.Normalize(vmin=vmin, vmax=vmax)
+
+            def get_color(value):
+                rgba = colormap(norm(np.log1p(value)))  # Aplica log a cada valor
+                return colors.to_hex(rgba)
+
+            # Crear mapa base amb escala i atribució
+            m = folium.Map(
+                location=[41.3874, 2.1686],
+                zoom_start=9,
+                tiles="OpenStreetMap",
+                attr="CartoAMB | © OpenStreetMap contributors",
+                control_scale=True  # ✅ Escala de distancia
+            )
+
+            # Capa única amb tots els municipis
+            geojson = folium.GeoJson(
+                data=gdf.__geo_interface__,
+                style_function=lambda feature: {
+                    "fillColor": get_color(feature["properties"]["total_clicks"]),
+                    "color": "black",
+                    "weight": 0.7,
+                    "fillOpacity": 0.75
+                },
+                tooltip=folium.GeoJsonTooltip(
+                    fields=["nommuni", "total_clicks"],
+                    aliases=["Municipi", "Clics 2024"]
+                )
+            )
+            geojson.add_to(m)
+
+            # Barra de color logarítmica amb valors reals
+            color_scale = bcm.LinearColormap(
+                colors=[colors.to_hex(colormap(norm(v))) for v in np.linspace(vmin, vmax, 256)],
+                vmin=np.expm1(vmin),
+                vmax=np.expm1(vmax),
+                caption="Total clics (escala logarítmica)"
+            )
+            color_scale.add_to(m)
+
+            # Mostrar el mapa a Streamlit
+            st_folium(m, width=800, height=600)
+
+
+            
+             === Exemple 7 ===
+            **Pregunta**: has un mapa coroplètic de descàrregues de MTM 1000 per municipi 
+
+
+            # Convertir geometries WKB a shapely
+            df['geometry'] = df['geom'].apply(
+                lambda x: wkb.loads(bytes.fromhex(x)) if isinstance(x, str) else None
+            )
+            df = df[df['geometry'].notnull()].copy()
+
+            # Crear GeoDataFrame
+            gdf = gpd.GeoDataFrame(df, geometry='geometry', crs='EPSG:4326')
+
+            # Calcular escala logarítmica de les descàrregues
+            gdf['log_descargas'] = gdf['total_descargas'].apply(lambda x: np.log1p(x))  # log(1 + x)
+
+            # Configurar colormap logarítmic
+            vmin = gdf['log_descargas'].min()
+            vmax = gdf['log_descargas'].max()
+            colormap = cm.get_cmap("YlOrRd")
+            norm = colors.Normalize(vmin=vmin, vmax=vmax)
+
+            def get_color(value):
+                rgba = colormap(norm(np.log1p(value)))
+                return colors.to_hex(rgba)
+
+            # Crear mapa base amb escala i atribució
+            m = folium.Map(
+                location=[41.3874, 2.1686],
+                zoom_start=9,
+                tiles="OpenStreetMap",
+                attr="CartoAMB | © OpenStreetMap contributors",
+                control_scale=True  # ✅ Escala de distància
+            )
+
+            # Capa única amb tots els municipis
+            geojson = folium.GeoJson(
+                data=gdf.__geo_interface__,
+                style_function=lambda feature: {
+                    "fillColor": get_color(feature["properties"]["total_descargas"]),
+                    "color": "black",
+                    "weight": 0.7,
+                    "fillOpacity": 0.7
+                },
+                tooltip=folium.GeoJsonTooltip(
+                    fields=["nommuni", "total_descargas"],
+                    aliases=["Municipi", "Descàrregues Orto 2020"]
+                )
+            )
+            geojson.add_to(m)
+
+            # Barra de color logarítmica
+            color_scale = bcm.LinearColormap(
+                colors=[colors.to_hex(colormap(norm(v))) for v in np.linspace(vmin, vmax, 256)],
+                vmin=np.expm1(vmin),  # revertimos log1p para que la leyenda muestre valores reales
+                vmax=np.expm1(vmax),
+                caption="Total descàrregues (escala logarítmica)"
+            )
+            color_scale.add_to(m)
+
+            # Mostrar el mapa a Streamlit
+            st_folium(m, width=800, height=600)
+
+
+            === Exemple 8 ===
+            **Pregunta**: Fes un mapa comparatiu de les descàrregues del MTM1000 per districte entre 2022 i 2023
+
+            **Codi complet esperat**:
+
+
+            # Conversió de WKB a geometries shapely
+            df['geometry'] = df['geom'].apply(lambda x: wkb.loads(bytes.fromhex(x)) if isinstance(x, str) else None)
+            df = df[df['geometry'].notnull()].copy()
+
+            # Crear GeoDataFrame
+            gdf = gpd.GeoDataFrame(df, geometry='geometry', crs='EPSG:4326')
+
+            # Crear mapa base amb atribució i escala gràfica
+            m = folium.Map(
+                location=[41.3874, 2.1686],
+                zoom_start=9,
+                tiles="OpenStreetMap",
+                attr="CartoAMB | © OpenStreetMap contributors",
+                control_scale=True
+            )
+
+            # Afegir una capa per a cada any
+            anys = [2022, 2023]
+            for any in anys:
+                columna_desc = f"total_descargas_{any}"
+                min_val = gdf[columna_desc].min()
+                max_val = gdf[columna_desc].max()
+                colormap = cm.get_cmap("YlOrRd")
+                norm = colors.Normalize(vmin=min_val, vmax=max_val)
+
+                def get_color(value):
+                    rgba = colormap(norm(value))
+                    return colors.to_hex(rgba)
+
+                capa = folium.GeoJson(
+                    data=gdf.__geo_interface__,
+                    style_function=lambda feature: {
+                        "fillColor": get_color(feature["properties"][columna_desc]),
+                        "color": "gray",
+                        "weight": 1,
+                        "fillOpacity": 0.7,
+                    },
+                    tooltip=folium.GeoJsonTooltip(
+                        fields=["nom", columna_desc],
+                        aliases=["Districte", f"Descàrregues {any}"],
+                        localize=True
+                    ),
+                    name=f"Descàrregues {any}"
+                )
+                capa.add_to(m)
+
+            # Llegenda comuna basada en rang global (min i max de tots els anys)
+            min_global = min(gdf["total_descargas_2022"].min(), gdf["total_descargas_2023"].min())
+            max_global = max(gdf["total_descargas_2022"].max(), gdf["total_descargas_2023"].max())
+            color_scale = bcm.LinearColormap(
+                colors=[colors.to_hex(colormap(norm(v))) for v in np.linspace(min_global, max_global, 256)],
+                vmin=min_global,
+                vmax=max_global,
+                caption="Descàrregues del MTM 1000"
+            )
+            color_scale.add_to(m)
+
+            # Control de capes
+            folium.LayerControl(collapsed=False).add_to(m)
+
+            # Mostrar mapa a Streamlit
+            st_folium(m, width=800, height=600)
+                         === Exemple 9 ===
+            **Pregunta**: Mostra un mapa de calor dels fulls on s’han descarregat dades del producte MTM 1000 durant febrer de 2023
+
+            # Convertir geometries WKB a shapely
+            df['geometry'] = df['geom'].apply(lambda x: wkb.loads(bytes.fromhex(x)) if isinstance(x, str) else None)
+            df = df[df['geometry'].notnull()].copy()
+
+            # Crear GeoDataFrame
+            gdf = gpd.GeoDataFrame(df, geometry='geometry', crs='EPSG:4326')
+
+            # Crear mapa base
+            m = folium.Map(
+                location=[41.3874, 2.1686],
+                zoom_start=9,
+                tiles="OpenStreetMap",
+                attr="CartoAMB | © OpenStreetMap contributors",
+                control_scale=True
+            )
+
+            # Aplicar escala logarítmica
+            gdf['log_descargas'] = gdf['total_descargas'].apply(lambda x: np.log1p(x))
+            vmin = gdf['log_descargas'].min()
+            vmax = gdf['log_descargas'].max()
+            colormap = cm.get_cmap("YlOrRd")
+            norm = colors.Normalize(vmin=vmin, vmax=vmax)
+
+            def get_color(value):
+                rgba = colormap(norm(np.log1p(value)))
+                return colors.to_hex(rgba)
+
+            # Capa per fulls
+            geojson = folium.GeoJson(
+                data=gdf.__geo_interface__,
+                style_function=lambda feature: {
+                    "fillColor": get_color(feature["properties"]["total_descargas"]),
+                    "color": "black",
+                    "weight": 0.7,
+                    "fillOpacity": 0.7
+                },
+                tooltip=folium.GeoJsonTooltip(
+                    fields=["idfull", "total_descargas"],
+                    aliases=["Full", "Descàrregues"]
+                )
+            )
+            geojson.add_to(m)
+
+            # Mostrar mapa
+            st_folium(m, width=700, height=500)
+
+
+
+
+
+
+"""
