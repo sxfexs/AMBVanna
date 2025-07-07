@@ -40,7 +40,7 @@ class AmbVannaGeneral(ModeloAMB, AMB_VectorStore):
             system_msg += f"\n\nEl DataFrame s’ha generat a partir de la següent consulta SQL:\n{sql}\n"
 
         # Cargar texto adicional desde un archivo
-        system_msg += "\n\n" + self.prompt_de_txt('Prompts/initial_propt_mapas.txt')
+        system_msg += "\n\n" + self.prompt_de_txt('Prompts/initial_prompt_mapas.txt')
 
 
         message_log = [
