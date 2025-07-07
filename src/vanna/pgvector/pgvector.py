@@ -30,12 +30,9 @@ class PG_VectorStore(VannaBase):
             self.embedding_function = config.get("embedding_function")
         else:
             from langchain_huggingface import HuggingFaceEmbeddings
-            #self.embedding_function = HuggingFaceEmbeddings(model_name="intfloat/multilingual-e5-base")
-            # PARA ELIMINARAR
-            self.embedding_function = HuggingFaceEmbeddings(
-                model_name="intfloat/multilingual-e5-base",
-                model_kwargs={"cache_dir": "/data/huggingface"}
-            )
+            self.embedding_function = HuggingFaceEmbeddings(model_name="intfloat/multilingual-e5-base")
+            
+          
 
 
         self.sql_collection = PGVector(
